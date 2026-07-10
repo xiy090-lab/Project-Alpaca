@@ -4,10 +4,6 @@
 
 This project is a systematic trading system using Alpaca Paper Trading.
 
-## Team Members
-
-- Your Name
-
 ## Features
 
 - Real-time market data
