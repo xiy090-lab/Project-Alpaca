@@ -11,6 +11,8 @@ from alpaca.data.requests import (
     StockLatestQuoteRequest
 )
 from alpaca.data.timeframe import TimeFrame
+from alpaca.data.live import StockDataStream
+from alpaca.data.enums import DataFeed
 
 
 class MarketData:
@@ -30,6 +32,94 @@ class MarketData:
             self.api_key,
             self.secret_key
         )
+
+        # DataFeed.IEX is the free data feed. The default SIP feed needs a
+        # paid subscription and will error on a free paper account.
+        self.stream = StockDataStream(
+            self.api_key,
+            self.secret_key,
+            feed=DataFeed.IEX
+        )
+
+        # Every incoming tick is kept here so the rest of the system can read
+        # the latest prices (simple in-memory store).
+        self.ticks = []
+
+    async def on_quote(self, quote):
+        """
+        Handler called on every incoming quote (bid / ask).
+        """
+
+        tick = {
+            "type": "quote",
+            "symbol": quote.symbol,
+            "bid": quote.bid_price,
+            "ask": quote.ask_price,
+            "timestamp": quote.timestamp,
+        }
+
+        self.ticks.append(tick)
+        self._log_tick(tick)
+
+        print(
+            f"[QUOTE] {tick['symbol']:<5} "
+            f"bid {tick['bid']:.2f}  ask {tick['ask']:.2f}"
+        )
+
+    async def on_trade(self, trade):
+        """
+        Handler called on every executed trade (price + size).
+        """
+
+        tick = {
+            "type": "trade",
+            "symbol": trade.symbol,
+            "price": trade.price,
+            "size": trade.size,
+            "timestamp": trade.timestamp,
+        }
+
+        self.ticks.append(tick)
+        self._log_tick(tick)
+
+        print(
+            f"[TRADE] {tick['symbol']:<5} "
+            f"price {tick['price']:.2f}  size {tick['size']}"
+        )
+
+    def _log_tick(self, tick):
+        """
+        Append one tick to a CSV log so incoming data is stored on disk.
+        """
+
+        os.makedirs("logs", exist_ok=True)
+
+        with open("logs/ticks.csv", "a") as f:
+            f.write(
+                f"{tick['timestamp']},{tick['type']},"
+                f"{tick['symbol']},"
+                f"{tick.get('bid', '')},{tick.get('ask', '')},"
+                f"{tick.get('price', '')},{tick.get('size', '')}\n"
+            )
+
+    def stream_quotes(self, *symbols):
+        """
+        Connect to Alpaca and stream live quotes for one or more symbols.
+
+        Example: market.stream_quotes("AAPL", "MSFT")
+        This blocks and runs until stopped (Ctrl+C).
+        """
+
+        self.stream.subscribe_quotes(self.on_quote, *symbols)
+        self.stream.run()
+
+    def stream_trades(self, *symbols):
+        """
+        Connect to Alpaca and stream live trades for one or more symbols.
+        """
+
+        self.stream.subscribe_trades(self.on_trade, *symbols)
+        self.stream.run()
 
     def get_historical_data(
         self,

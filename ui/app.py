@@ -1,6 +1,7 @@
 # Flask UI
 import os
 import sys
+import threading
 
 # Allow running as "python ui/app.py" by adding the project root to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -8,6 +9,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from flask import Flask, render_template, jsonify
 
 from data.market_data import MarketData
+from data.live_store import LiveStore
+from data.live_stream import LiveStream
 from strategy.moving_average import MovingAverageStrategy
 from config.config import Config
 
@@ -32,8 +35,31 @@ app = Flask(
 market = MarketData()
 strategy = MovingAverageStrategy(Config.SHORT_WINDOW, Config.LONG_WINDOW)
 
+# Live streaming: the WebSocket thread writes into the store, the UI reads it.
+live_store = LiveStore()
+live_stream = LiveStream(live_store)
+_stream_started = threading.Event()
+
 # Simple in-memory system state toggled by the Start/Stop buttons
-STATE = {"running": False, "mode": "PAPER" if Config.PAPER else "LIVE"}
+STATE = {
+    "running": False,
+    "mode": "PAPER" if Config.PAPER else "LIVE",
+    "streaming": False,
+}
+
+
+def start_background_services():
+    """
+    Start the live WebSocket stream once. Safe to call multiple times.
+    Called on startup so the UI shows live data as soon as it loads.
+    """
+    if _stream_started.is_set():
+        return
+
+    started = live_stream.start(Config.TICKERS)
+    if started:
+        _stream_started.set()
+        STATE["streaming"] = True
 
 
 @app.route("/")
@@ -157,6 +183,26 @@ def api_orders():
         return jsonify({"connected": False, "error": str(e), "orders": []})
 
 
+@app.route("/api/live/<symbol>")
+def api_live(symbol):
+    """Return the latest streamed quote + recent history for a symbol."""
+    latest = live_store.get_latest(symbol)
+    history = live_store.get_history(symbol)
+
+    return jsonify(
+        {
+            "symbol": symbol,
+            "streaming": STATE["streaming"],
+            "latest": latest,
+            "history": {
+                # HH:MM:SS from the "YYYY-MM-DD HH:MM:SS..." timestamp
+                "labels": [h["timestamp"][11:19] for h in history],
+                "mid": [round((h["bid"] + h["ask"]) / 2, 2) for h in history],
+            },
+        }
+    )
+
+
 @app.route("/api/status")
 def api_status():
     return jsonify(STATE)
@@ -175,4 +221,6 @@ def api_stop():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    start_background_services()
+    # debug=False so the reloader doesn't open a second WebSocket connection
+    app.run(host="127.0.0.1", port=5000, debug=False)

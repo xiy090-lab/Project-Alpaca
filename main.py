@@ -1,68 +1,25 @@
-from config.config import Config
-from data.market_data import MarketData
-from strategy.moving_average import MovingAverageStrategy
-from risk.risk_manager import RiskManager
-from execution.trader import Trader
+# Entry point
+#
+# Launches the trading dashboard (Flask UI) and starts the live data stream.
+# Run:  python main.py   ->   open http://127.0.0.1:5000
+
+from ui.app import app, start_background_services
 
 
 def main():
-
     print("=" * 50)
     print("Alpaca Trading System")
     print("=" * 50)
+    print("Starting live data stream + dashboard...")
+    print("Open http://127.0.0.1:5000 in your browser")
+    print("=" * 50)
 
-    market = MarketData()
+    # Start the WebSocket stream in the background
+    start_background_services()
 
-    strategy = MovingAverageStrategy(
-        short_window=Config.SHORT_WINDOW,
-        long_window=Config.LONG_WINDOW
-    )
-
-    risk = RiskManager(
-        max_position=Config.MAX_POSITION,
-        stop_loss=Config.STOP_LOSS,
-        take_profit=Config.TAKE_PROFIT
-    )
-
-    trader = Trader()
-
-    for symbol in Config.TICKERS:
-
-        print(f"\nProcessing {symbol}")
-
-        try:
-
-            df = market.get_historical_data(symbol)
-
-            result = strategy.generate_signals(df)
-
-            signal = strategy.latest_signal(result)
-
-            latest_price = result.iloc[-1]["close"]
-
-            print(f"Latest Price: {latest_price:.2f}")
-
-            print(f"Signal: {signal}")
-
-            quantity = 10
-
-            if not risk.allow_trade(quantity):
-                print("Trade rejected by Risk Manager")
-                continue
-
-            # Uncomment when ready for paper trading
-
-            # if signal == "BUY":
-            #     trader.buy(symbol, quantity)
-
-            # elif signal == "SELL":
-            #     trader.sell(symbol, quantity)
-
-        except Exception as e:
-
-            print(f"Error processing {symbol}: {e}")
-
-    print("\nSystem Finished")
+    # Serve the UI (blocking). debug=False so the reloader does not
+    # open a second WebSocket connection.
+    app.run(host="127.0.0.1", port=5000, debug=False)
 
 
 if __name__ == "__main__":
