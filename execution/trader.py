@@ -1,68 +1,109 @@
 # Order execution
-class RiskManager:
+#
+# Wraps Alpaca's TradingClient to submit paper-trading orders.
+# Uses the RiskManager to check trades before they are sent.
+
+import os
+
+from dotenv import load_dotenv
+
+from alpaca.trading.client import TradingClient
+from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
+
+from config.config import Config
+from risk.risk_manager import RiskManager
+
+
+class Trader:
     """
-    Basic Risk Management Module
+    Submits market orders to Alpaca paper trading and reports order status.
     """
 
-    def __init__(
-        self,
-        max_position=100,
-        stop_loss=0.05,
-        take_profit=0.10
-    ):
-        self.max_position = max_position
-        self.stop_loss = stop_loss
-        self.take_profit = take_profit
+    def __init__(self, risk=None):
+        load_dotenv()
 
-    def check_position_size(self, quantity):
+        api_key = Config.API_KEY
+        api_secret = Config.API_SECRET
+
+        if not api_key or not api_secret:
+            raise ValueError(
+                "Missing Alpaca API Keys. Please check your .env file."
+            )
+
+        # paper=True keeps us on the paper-trading account (no real money)
+        self.client = TradingClient(api_key, api_secret, paper=Config.PAPER)
+
+        # Risk checks run before every order
+        self.risk = risk or RiskManager(
+            max_position=Config.MAX_POSITION,
+            stop_loss=Config.STOP_LOSS,
+            take_profit=Config.TAKE_PROFIT,
+        )
+
+    def buy(self, symbol, quantity):
+        """Submit a market BUY order."""
+        return self._submit(symbol, quantity, OrderSide.BUY)
+
+    def sell(self, symbol, quantity):
+        """Submit a market SELL order."""
+        return self._submit(symbol, quantity, OrderSide.SELL)
+
+    def _submit(self, symbol, quantity, side):
         """
-        Check if position size exceeds the limit.
-        """
-
-        if quantity > self.max_position:
-            return False
-
-        return True
-
-    def check_stop_loss(self, entry_price, current_price):
-        """
-        Return True if stop loss is triggered.
-        """
-
-        loss = (entry_price - current_price) / entry_price
-
-        return loss >= self.stop_loss
-
-    def check_take_profit(self, entry_price, current_price):
-        """
-        Return True if take profit is triggered.
-        """
-
-        profit = (current_price - entry_price) / entry_price
-
-        return profit >= self.take_profit
-
-    def allow_trade(self, quantity):
-        """
-        Determine whether a trade is allowed.
+        Run risk checks, submit the order, and return a simple result dict.
         """
 
-        return self.check_position_size(quantity)
+        # 1. Risk check
+        if not self.risk.allow_trade(quantity):
+            print(f"[RISK] Rejected {side.value} {quantity} {symbol} "
+                  f"(exceeds max position {self.risk.max_position})")
+            return {"status": "rejected", "reason": "risk", "symbol": symbol}
+
+        # 2. Build the order
+        order_data = MarketOrderRequest(
+            symbol=symbol,
+            qty=quantity,
+            side=side,
+            time_in_force=TimeInForce.DAY,
+        )
+
+        # 3. Submit, with error handling for rejects / network issues
+        try:
+            order = self.client.submit_order(order_data)
+
+            print(f"[ORDER] {side.value.upper()} {quantity} {symbol} "
+                  f"-> {order.status} (id {order.id})")
+
+            return {
+                "status": str(order.status),
+                "symbol": symbol,
+                "side": side.value,
+                "qty": quantity,
+                "order_id": str(order.id),
+            }
+
+        except Exception as e:
+            print(f"[ERROR] Order failed for {symbol}: {e}")
+            return {"status": "error", "reason": str(e), "symbol": symbol}
+
+    def get_positions(self):
+        """Return current open positions."""
+        return self.client.get_all_positions()
+
+    def get_account(self):
+        """Return account info (equity, buying power, etc.)."""
+        return self.client.get_account()
 
 
 if __name__ == "__main__":
 
-    risk = RiskManager()
+    trader = Trader()
 
-    print("Position Check:", risk.allow_trade(50))
-    print("Position Check:", risk.allow_trade(200))
+    account = trader.get_account()
+    print("Account equity:", account.equity)
+    print("Buying power:", account.buying_power)
 
-    print(
-        "Stop Loss:",
-        risk.check_stop_loss(100, 94)
-    )
-
-    print(
-        "Take Profit:",
-        risk.check_take_profit(100, 112)
-    )
+    # Example (uncomment to place a real paper order):
+    # result = trader.buy("AAPL", 1)
+    # print(result)

@@ -223,4 +223,5 @@ def api_stop():
 if __name__ == "__main__":
     start_background_services()
     # debug=False so the reloader doesn't open a second WebSocket connection
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    # port 5001 avoids macOS AirPlay Receiver, which holds port 5000
+    app.run(host="127.0.0.1", port=5001, debug=False)
