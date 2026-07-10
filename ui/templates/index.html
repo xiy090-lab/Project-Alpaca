@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alpaca Trading Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0e1117; --card: #161b26; --border: #262d3d;
+      --text: #e6e9ef; --muted: #8b93a7; --green: #21c07a; --red: #f0616d; --accent: #4c8dff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, Segoe UI, Roboto, sans-serif; }
+    header { display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 24px; border-bottom: 1px solid var(--border); }
+    header h1 { font-size: 18px; margin: 0; }
+    .wrap { display: grid; grid-template-columns: 260px 1fr; gap: 20px; padding: 20px 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .5px;
+      color: var(--muted); margin: 0 0 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    select, button { width: 100%; padding: 9px 10px; border-radius: 8px;
+      border: 1px solid var(--border); background: #0e1320; color: var(--text); font-size: 14px; }
+    button { cursor: pointer; margin-top: 8px; }
+    .btn-start { background: var(--green); color: #04140c; border: none; font-weight: 600; }
+    .btn-stop { background: var(--red); color: #17060a; border: none; font-weight: 600; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+    .metric { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .metric .k { font-size: 12px; color: var(--muted); }
+    .metric .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+    .BUY { background: rgba(33,192,122,.15); color: var(--green); }
+    .SELL { background: rgba(240,97,109,.15); color: var(--red); }
+    .HOLD { background: rgba(139,147,167,.15); color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+    th:first-child, td:first-child { text-align: left; }
+    .status-dot { height: 9px; width: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .pos { color: var(--green); } .neg { color: var(--red); }
+    .muted { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📈 Alpaca Trading Dashboard</h1>
+    <div>
+      <span id="conn"><span class="status-dot" style="background:var(--muted)"></span>Checking…</span>
+      &nbsp;•&nbsp; Mode: <strong id="mode">—</strong>
+      &nbsp;•&nbsp; Strategy: <strong id="run-state">Stopped</strong>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- Sidebar controls -->
+    <aside>
+      <div class="card">
+        <h2>Controls</h2>
+        <label>Ticker</label>
+        <select id="ticker">
+          {% for t in tickers %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+        </select>
+        <button class="btn-start" onclick="setRunning(true)">▶ Start Strategy</button>
+        <button class="btn-stop" onclick="setRunning(false)">■ Stop Strategy</button>
+        <p class="muted" style="margin-top:14px">
+          MA windows: {{ short_window }} / {{ long_window }}<br>
+          Edit tickers &amp; parameters in <code>config/config.py</code>.
+        </p>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Paper Account</h2>
+        <div id="account"><p class="muted">Loading…</p></div>
+      </div>
+    </aside>
+
+    <!-- Main panel -->
+    <main>
+      <div class="metrics">
+        <div class="metric"><div class="k">Latest Price</div><div class="v" id="m-price">—</div></div>
+        <div class="metric"><div class="k">Signal</div><div class="v" id="m-signal">—</div></div>
+        <div class="metric"><div class="k">Short MA</div><div class="v" id="m-short">—</div></div>
+        <div class="metric"><div class="k">Long MA</div><div class="v" id="m-long">—</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Price &amp; Moving Averages</h2>
+        <canvas id="chart" height="90"></canvas>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Recent Data</h2>
+        <table>
+          <thead><tr><th>Date</th><th>Close</th><th>Short MA</th><th>Long MA</th><th>Signal</th></tr></thead>
+          <tbody id="recent"></tbody>
+        </table>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Recent Orders (last 5)</h2>
+        <table>
+          <thead><tr><th>Submitted</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Type</th><th>Filled</th><th>Status</th></tr></thead>
+          <tbody id="orders"></tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+<script>
+let chart;
+
+async function loadData() {
+  const sym = document.getElementById('ticker').value;
+  const r = await fetch(`/api/data/${sym}`);
+  const d = await r.json();
+
+  document.getElementById('m-price').textContent = '$' + d.price.toFixed(2);
+  const sig = document.getElementById('m-signal');
+  sig.innerHTML = `<span class="pill ${d.signal}">${d.signal}</span>`;
+  document.getElementById('m-short').textContent = d.short_ma ?? '—';
+  document.getElementById('m-long').textContent = d.long_ma ?? '—';
+
+  const tb = document.getElementById('recent');
+  tb.innerHTML = d.recent.map(row => {
+    const s = row.signal === 1 ? 'BUY' : row.signal === -1 ? 'SELL' : 'HOLD';
+    return `<tr><td>${row.timestamp}</td><td>${row.close}</td>
+      <td>${row.short_ma ?? '—'}</td><td>${row.long_ma ?? '—'}</td>
+      <td><span class="pill ${s}">${s}</span></td></tr>`;
+  }).join('');
+
+  drawChart(d.chart);
+}
+
+function drawChart(c) {
+  const ctx = document.getElementById('chart');
+  const cfg = {
+    type: 'line',
+    data: { labels: c.labels, datasets: [
+      { label: 'Close', data: c.close, borderColor: '#4c8dff', borderWidth: 1.5, pointRadius: 0 },
+      { label: 'Short MA', data: c.short_ma, borderColor: '#21c07a', borderWidth: 1.5, pointRadius: 0 },
+      { label: 'Long MA', data: c.long_ma, borderColor: '#f0a621', borderWidth: 1.5, pointRadius: 0 },
+    ]},
+    options: { responsive: true, interaction: { intersect: false, mode: 'index' },
+      plugins: { legend: { labels: { color: '#8b93a7' } } },
+      scales: { x: { ticks: { color: '#8b93a7', maxTicksLimit: 8 }, grid: { color: '#1c2333' } },
+                y: { ticks: { color: '#8b93a7' }, grid: { color: '#1c2333' } } } }
+  };
+  if (chart) { chart.data = cfg.data; chart.update(); } else { chart = new Chart(ctx, cfg); }
+}
+
+async function loadOrders() {
+  const r = await fetch('/api/orders');
+  const d = await r.json();
+  const tb = document.getElementById('orders');
+
+  if (!d.connected) {
+    tb.innerHTML = '<tr><td colspan="7" class="muted">Not connected — set API keys in <code>.env</code> to see orders.</td></tr>';
+    return;
+  }
+  if (!d.orders.length) {
+    tb.innerHTML = '<tr><td colspan="7" class="muted">No orders yet.</td></tr>';
+    return;
+  }
+  tb.innerHTML = d.orders.map(o => {
+    const side = o.side.toUpperCase();
+    const sideCls = side.includes('BUY') ? 'pos' : 'neg';
+    const filled = o.status.toLowerCase() === 'filled' ? 'pos'
+                 : o.status.toLowerCase().includes('cancel') || o.status.toLowerCase().includes('reject') ? 'neg' : '';
+    return `<tr>
+      <td>${o.submitted_at.replace('T', ' ')}</td>
+      <td>${o.symbol}</td>
+      <td class="${sideCls}">${side}</td>
+      <td>${o.qty ?? '—'}</td>
+      <td>${o.type}</td>
+      <td>${o.filled_qty}</td>
+      <td class="${filled}">${o.status}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadAccount() {
+  const r = await fetch('/api/account');
+  const d = await r.json();
+  const conn = document.getElementById('conn');
+  const el = document.getElementById('account');
+
+  if (!d.connected) {
+    conn.innerHTML = '<span class="status-dot" style="background:var(--red)"></span>Disconnected';
+    el.innerHTML = '<p class="muted">Not connected. Set API keys in <code>.env</code> to see live positions.</p>';
+    return;
+  }
+  conn.innerHTML = '<span class="status-dot" style="background:var(--green)"></span>Connected';
+  let rows = d.positions.map(p => {
+    const cls = p.unrealized_pl >= 0 ? 'pos' : 'neg';
+    return `<tr><td>${p.symbol}</td><td>${p.qty}</td>
+      <td class="${cls}">${p.unrealized_pl.toFixed(2)}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="muted">No open positions</td></tr>';
+
+  el.innerHTML = `
+    <div class="muted">Equity</div><div style="font-size:20px;font-weight:700">$${d.equity.toLocaleString()}</div>
+    <div class="muted" style="margin-top:6px">Buying power: $${d.buying_power.toLocaleString()}</div>
+    <table style="margin-top:12px">
+      <thead><tr><th>Sym</th><th>Qty</th><th>Unreal. P&L</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function setRunning(run) {
+  const r = await fetch(run ? '/api/start' : '/api/stop', { method: 'POST' });
+  const s = await r.json();
+  document.getElementById('run-state').textContent = s.running ? 'Running' : 'Stopped';
+  document.getElementById('mode').textContent = s.mode;
+}
+
+async function loadStatus() {
+  const s = await (await fetch('/api/status')).json();
+  document.getElementById('run-state').textContent = s.running ? 'Running' : 'Stopped';
+  document.getElementById('mode').textContent = s.mode;
+}
+
+document.getElementById('ticker').addEventListener('change', loadData);
+loadStatus(); loadData(); loadAccount(); loadOrders();
+setInterval(() => { loadAccount(); loadOrders(); }, 15000);
+</script>
+</body>
+</html>
