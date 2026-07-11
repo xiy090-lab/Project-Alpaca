@@ -88,11 +88,16 @@ class TradingEngine:
         df = self.market.get_historical_data(symbol, years=1)
         result = self.strategy.generate_signals(df)
         signal = self.strategy.latest_signal(result)
-        price = float(result.iloc[-1]["close"])
+        price = self.market.get_latest_price(symbol)
+        if price is None:
+            price = float(result.iloc[-1]["close"])
 
         self._log_event(symbol, "SIGNAL", signal, price=price)
 
-        qty, _ = self.trader.get_position_qty(symbol)
+        qty, avg_entry = self.trader.get_position_qty(symbol)
+
+        if qty > 0 and symbol not in self._entry_price and avg_entry > 0:
+            self._entry_price[symbol] = avg_entry
 
         # Risk-driven exit takes priority over the strategy signal.
         entry = self._entry_price.get(symbol)
@@ -125,6 +130,25 @@ class TradingEngine:
             symbol, "ORDER", f"{side.upper()} {qty}", price=price,
             extra=result.get("status"),
         )
+
+        status = str(result.get("status", "")).lower()
+        filled_qty = result.get("filled_qty")
+        no_fill = filled_qty is not None and filled_qty == 0
+
+        if (
+            result.get("status") in ("rejected", "error")
+            or "reject" in status
+            or "cancel" in status
+            or no_fill
+        ):
+            self._log_event(
+                symbol, "NOT_FILLED", f"{side.upper()} {qty}",
+                price=price, extra=result.get("status"),
+            )
+            return
+
+        # Prefer the broker's actual fill price when we have it.
+        fill_price = result.get("filled_avg_price") or price
 
         if side == "buy":
             self._entry_price[symbol] = price

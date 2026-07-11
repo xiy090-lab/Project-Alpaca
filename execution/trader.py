@@ -4,6 +4,7 @@
 # Uses the RiskManager to check trades before they are sent.
 
 import os
+import time
 
 from dotenv import load_dotenv
 
@@ -72,20 +73,54 @@ class Trader:
         try:
             order = self.client.submit_order(order_data)
 
+            order = self._wait_for_fill(order)
+
+            filled_qty = (
+                float(order.filled_qty) if order.filled_qty else 0.0
+            )
+            filled_avg_price = (
+                float(order.filled_avg_price)
+                if getattr(order, "filled_avg_price", None)
+                else None
+            )
+
             print(f"[ORDER] {side.value.upper()} {quantity} {symbol} "
-                  f"-> {order.status} (id {order.id})")
+                  f"-> {order.status} "
+                  f"(filled {filled_qty}, id {order.id})")
 
             return {
                 "status": str(order.status),
                 "symbol": symbol,
                 "side": side.value,
                 "qty": quantity,
+                "filled_qty": filled_qty,
+                "filled_avg_price": filled_avg_price,
                 "order_id": str(order.id),
             }
 
         except Exception as e:
             print(f"[ERROR] Order failed for {symbol}: {e}")
             return {"status": "error", "reason": str(e), "symbol": symbol}
+
+    def _wait_for_fill(self, order, tries=5, delay=0.5):
+        
+        terminal = {"filled", "canceled", "cancelled", "rejected", "expired"}
+
+        for _ in range(tries):
+            status = str(order.status).lower().split(".")[-1]
+            filled = order.filled_qty and float(order.filled_qty) > 0
+
+            if status in terminal or filled:
+                return order
+
+            time.sleep(delay)
+
+            try:
+                order = self.client.get_order_by_id(order.id)
+            except Exception:
+                break
+
+        return order
 
     def get_positions(self):
         """Return current open positions."""

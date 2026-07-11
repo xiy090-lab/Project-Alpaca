@@ -132,21 +132,30 @@ pytest tests/
 
 ## Strategy
 
-Dual moving-average crossover:
-- **BUY** when the short MA is above the long MA
-- **SELL** when the short MA is below the long MA
-- **HOLD** otherwise
+Dual moving-average, **state-based** (not a one-shot crossover event):
+- **BUY** state when the short MA is above the long MA
+- **SELL** state when the short MA is below the long MA
+- **HOLD** before there is enough history for both MAs
+
+The system is **long-only**. The engine enters a long position on the first BUY
+state while flat and exits on the first SELL state while holding; it never shorts.
+The backtester models the same long-only behavior, so its metrics correspond to
+what the paper engine actually does.
 
 Windows and the ticker universe are configured in `config/config.py`. The intuition
-is standard trend-following: once a short-term average clears a long-term average,
-recent price action is outpacing the trend, which tends to persist over the next few
-bars — the strategy holds a position for the duration of that trend and exits on the
-reverse cross.
+is standard trend-following: while the short-term average sits above the long-term
+average, recent price action is outpacing the trend, which tends to persist over the
+next few bars — the strategy holds the position for the duration of that state and
+exits when it flips.
 
 ## Risk Controls
 
-- **Max position size** (`MAX_POSITION`): the engine will not add to a position past
-  this many shares, accounting for what is already held.
+- **Max position size** (`MAX_POSITION`): a hard cap on shares held per asset,
+  checked against the position already open on Alpaca before any buy. Because the
+  engine enters only when flat and buys `TRADE_QTY` shares (with
+  `TRADE_QTY` < `MAX_POSITION` by default), this acts as a safety guardrail rather
+  than a routinely-binding limit — set `TRADE_QTY` closer to `MAX_POSITION`, or allow
+  adding to positions, to exercise it.
 - **Trade size** (`TRADE_QTY`): shares bought per BUY signal.
 - **Stop-loss / take-profit** (`STOP_LOSS`, `TAKE_PROFIT`): checked every engine cycle
   against the position's entry price and take priority over the strategy signal —
@@ -176,8 +185,15 @@ All trading runs in Alpaca **paper mode** only.
 
 ## Limitations / Possible Improvements
 
-- Signal generation re-fetches historical bars every cycle rather than incrementally
-  updating from the live stream.
-- Single strategy (dual MA); no portfolio-level risk aggregation across tickers.
-- No persistent database — state lives in-memory plus CSV logs, so it resets on
-  restart (open Alpaca positions themselves persist on Alpaca's side).
+- Signals are computed on **daily** bars re-fetched every cycle (not incrementally
+  from the live stream), so a signal changes at most once per day; the live quote is
+  used only for stop-loss/take-profit checks and fill-price estimates.
+- Single strategy (dual MA), long-only; no portfolio-level risk aggregation across
+  tickers, and `MAX_POSITION` is a guardrail rather than a binding limit by default
+  (see Risk Controls).
+- Orders are polled briefly for their fill state, but the engine does not manage
+  long-lived partially-filled orders beyond that window.
+- No persistent database — in-memory state plus CSV logs reset on restart, though the
+  engine re-seeds a position's entry price from Alpaca's `avg_entry_price` on the next
+  cycle so stop-loss/take-profit still work after a restart. Open Alpaca positions
+  themselves persist on Alpaca's side.

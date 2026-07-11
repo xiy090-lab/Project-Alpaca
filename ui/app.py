@@ -33,7 +33,11 @@ app = Flask(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
 )
 
-market = MarketData()
+market = (
+    MarketData()
+    if (Config.API_KEY and Config.API_SECRET)
+    else None
+)
 strategy = MovingAverageStrategy(Config.SHORT_WINDOW, Config.LONG_WINDOW)
 
 # Live streaming: the WebSocket thread writes into the store, the UI reads it.
@@ -88,6 +92,11 @@ def index():
 @app.route("/api/data/<symbol>")
 def api_data(symbol):
     """Return latest price, signal and chart series for a symbol."""
+    if market is None:
+        return jsonify(
+            {"symbol": symbol, "error": "No API keys configured"}
+        )
+    
     try:
         df = market.get_historical_data(symbol)
         result = strategy.generate_signals(df)

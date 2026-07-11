@@ -94,7 +94,13 @@ class MarketData:
 
         os.makedirs("logs", exist_ok=True)
 
-        with open("logs/ticks.csv", "a") as f:
+        path = "logs/ticks.csv"
+        write_header = not os.path.exists(path)
+
+        with open(path, "a") as f:
+            if write_header:
+                f.write("timestamp, type, symbol, bid, ask, price, size\n")
+
             f.write(
                 f"{tick['timestamp']},{tick['type']},"
                 f"{tick['symbol']},"
@@ -138,7 +144,8 @@ class MarketData:
             symbol_or_symbols=symbol,
             timeframe=timeframe,
             start=start,
-            end=end
+            end=end,
+            feed=DataFeed.IEX
         )
 
         bars = self.client.get_stock_bars(request)
@@ -164,6 +171,23 @@ class MarketData:
         quote = self.client.get_stock_latest_quote(request)
 
         return quote[symbol]
+    
+    def get_latest_price(self, symbol):
+
+        try:
+            quote = self.get_latest_quote(symbol)
+            bid = float(quote.bid_price)
+            ask = float(quote.ask_price)
+
+            if bid > 0 and ask > 0:
+                return round((bid + ask) / 2,2)
+            
+            side = ask if ask > 0 else bid
+
+            return round(side, 2) if side > 0 else None
+        
+        except Exception:
+            return None
 
     def save_csv(self, df, filename):
         """

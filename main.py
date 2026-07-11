@@ -1,7 +1,7 @@
 # Entry point
 #
 # Launches the trading dashboard (Flask UI) and starts the live data stream.
-# Run:  python main.py   ->   open http://127.0.0.1:5000
+# Run:  python main.py   ->   open http://127.0.0.1:5001
 
 from ui.app import app, start_background_services
 

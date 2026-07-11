@@ -1,16 +1,17 @@
 # Backtesting
 import pandas as pd
 
+from config.config import Config
 from data.market_data import MarketData
 from strategy.moving_average import MovingAverageStrategy
 
 
 class Backtester:
 
-    def __init__(self, symbol="AAPL", initial_cash=100000):
+    def __init__(self, symbol="AAPL", initial_cash=None):
 
         self.symbol = symbol
-        self.initial_cash = initial_cash
+        self.initial_cash = initial_cash or Config.INITIAL_CAPITAL
 
     def run(self):
 
@@ -18,20 +19,30 @@ class Backtester:
 
         df = market.get_historical_data(self.symbol)
 
-        strategy = MovingAverageStrategy()
+        strategy = MovingAverageStrategy(
+            Config.SHORT_WINDOW,
+            Config.LONG_WINDOW
+        )
 
         df = strategy.generate_signals(df)
+
+        df["position"] = df["signal"].clip(lower=0)
 
         df["daily_return"] = df["close"].pct_change()
 
         df["strategy_return"] = (
             df["daily_return"]
-            * df["signal"].shift(1)
+            * df["position"].shift(1)
         )
 
         df["strategy_return"] = (
             df["strategy_return"]
             .fillna(0)
+        ).fillna(0)
+
+        turnover = df["position"].diff().abs().fillna(0)
+        df["strategy_return"] = (
+            df["strategy_return"]- turnover * Config.COMMISSION
         )
 
         df["portfolio"] = (
@@ -53,7 +64,8 @@ class Backtester:
         ) * 100
 
         trades = (
-            df["position_change"]
+            df["position"]
+            .diff()
             .abs()
             .fillna(0)
             .sum()
@@ -65,7 +77,7 @@ class Backtester:
         max_drawdown = drawdown.min() * 100
 
         # Hit rate: share of invested days with a positive strategy return.
-        invested = df[df["signal"].shift(1).fillna(0) != 0]
+        invested = df[df["position"].shift(1).fillna(0) > 0]
         winning_days = (invested["strategy_return"] > 0).sum()
         hit_rate = (
             (winning_days / len(invested)) * 100
