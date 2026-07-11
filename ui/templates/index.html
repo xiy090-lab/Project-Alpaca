@@ -84,6 +84,11 @@
         <h2>Recent Orders (last 5)</h2>
         <div id="orders" class="muted">Loading…</div>
       </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Engine Performance</h2>
+        <div id="engine-metrics" class="muted">Loading…</div>
+      </div>
     </aside>
 
     <!-- Main -->
@@ -119,6 +124,17 @@
           <div class="metric"><div class="k">Long MA</div><div class="v" id="m-long">—</div></div>
         </div>
         <canvas id="maChart" height="80"></canvas>
+      </div>
+
+      <!-- Trading engine: signals -> orders, and closed trades -->
+      <div class="card" style="margin-top:20px">
+        <h2>Engine Activity — Signals &amp; Orders</h2>
+        <div id="engine-events" class="muted">Loading…</div>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h2>Closed Trades</h2>
+        <div id="engine-trades" class="muted">Loading…</div>
       </div>
     </main>
   </div>
@@ -167,6 +183,13 @@ function drawLive(h) {
 async function loadData() {
   if (!activeSymbol) return;
   const d = await (await fetch(`/api/data/${activeSymbol}`)).json();
+  if (d.error) {
+    document.getElementById('m-price').textContent = '—';
+    document.getElementById('m-signal').innerHTML = '<span class="pill HOLD">N/A</span>';
+    document.getElementById('m-short').textContent = '—';
+    document.getElementById('m-long').textContent = '—';
+    return;
+  }
   document.getElementById('m-price').textContent = '$' + d.price.toFixed(2);
   document.getElementById('m-signal').innerHTML = `<span class="pill ${d.signal}">${d.signal}</span>`;
   document.getElementById('m-short').textContent = d.short_ma ?? '—';
@@ -225,6 +248,43 @@ async function loadOrders() {
     }).join('') + '</tbody></table>';
 }
 
+async function loadEngineMetrics() {
+  const d = await (await fetch('/api/engine/metrics')).json();
+  const el = document.getElementById('engine-metrics');
+  if (!d.connected) { el.innerHTML = '<span class="muted">Not connected.</span>'; return; }
+  const cls = d.cumulative_pnl >= 0 ? 'pos' : 'neg';
+  el.innerHTML = `
+    <div class="muted">Cumulative P&amp;L</div><div class="${cls}" style="font-size:20px;font-weight:700">$${d.cumulative_pnl.toFixed(2)}</div>
+    <div class="muted" style="margin-top:6px">Max drawdown: $${d.max_drawdown.toFixed(2)}</div>
+    <div class="muted">Trades: ${d.trade_count}</div>
+    <div class="muted">Hit rate: ${d.hit_rate === null ? '—' : (d.hit_rate * 100).toFixed(0) + '%'}</div>`;
+}
+
+async function loadEngineEvents() {
+  const d = await (await fetch('/api/engine/events')).json();
+  const el = document.getElementById('engine-events');
+  if (!d.connected) { el.innerHTML = '<span class="muted">Engine off — no API keys configured.</span>'; return; }
+  if (!d.events.length) { el.innerHTML = '<span class="muted">No signals yet — waiting for the next engine cycle.</span>'; return; }
+  el.innerHTML = '<table><thead><tr><th>Time</th><th>Symbol</th><th>Type</th><th>Detail</th><th>Price</th></tr></thead><tbody>' +
+    d.events.map(e => {
+      const pill = ['BUY', 'SELL'].includes(e.detail) || e.detail?.startsWith('BUY') || e.detail?.startsWith('SELL')
+        ? `<span class="pill ${e.detail.startsWith('SELL') ? 'SELL' : 'BUY'}">${e.detail}</span>` : e.detail;
+      return `<tr><td>${e.timestamp.slice(11, 19)}</td><td>${e.symbol}</td><td>${e.type}</td><td>${pill}</td><td>${e.price ? '$' + e.price.toFixed(2) : '—'}</td></tr>`;
+    }).join('') + '</tbody></table>';
+}
+
+async function loadEngineTrades() {
+  const d = await (await fetch('/api/engine/trades')).json();
+  const el = document.getElementById('engine-trades');
+  if (!d.connected) { el.innerHTML = '<span class="muted">Engine off — no API keys configured.</span>'; return; }
+  if (!d.trades.length) { el.innerHTML = '<span class="muted">No closed trades yet.</span>'; return; }
+  el.innerHTML = '<table><thead><tr><th>Time</th><th>Symbol</th><th>Entry</th><th>Exit</th><th>Qty</th><th>P&amp;L</th><th>Reason</th></tr></thead><tbody>' +
+    d.trades.map(t => {
+      const cls = t.pnl >= 0 ? 'pos' : 'neg';
+      return `<tr><td>${t.timestamp.slice(11, 19)}</td><td>${t.symbol}</td><td>$${t.entry.toFixed(2)}</td><td>$${t.exit.toFixed(2)}</td><td>${t.qty}</td><td class="${cls}">$${t.pnl.toFixed(2)}</td><td>${t.reason}</td></tr>`;
+    }).join('') + '</tbody></table>';
+}
+
 async function setRunning(run) {
   const s = await (await fetch(run ? '/api/start' : '/api/stop', { method: 'POST' })).json();
   document.getElementById('run-state').textContent = s.running ? 'Running' : 'Stopped';
@@ -242,8 +302,10 @@ async function loadStatus() {
 // Init
 selectSymbol('{{ tickers[0] }}');
 loadStatus(); loadAccount(); loadOrders();
+loadEngineMetrics(); loadEngineEvents(); loadEngineTrades();
 setInterval(loadLive, 1500);              // live quotes: fast
 setInterval(() => { loadAccount(); loadOrders(); loadStatus(); }, 10000);
+setInterval(() => { loadEngineMetrics(); loadEngineEvents(); loadEngineTrades(); }, 10000);
 </script>
 </body>
 </html>

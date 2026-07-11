@@ -59,6 +59,20 @@ class Backtester:
             .sum()
         )
 
+        # Max drawdown: largest drop from a running peak of the equity curve.
+        running_max = df["portfolio"].cummax()
+        drawdown = (df["portfolio"] - running_max) / running_max
+        max_drawdown = drawdown.min() * 100
+
+        # Hit rate: share of invested days with a positive strategy return.
+        invested = df[df["signal"].shift(1).fillna(0) != 0]
+        winning_days = (invested["strategy_return"] > 0).sum()
+        hit_rate = (
+            (winning_days / len(invested)) * 100
+            if len(invested) > 0
+            else 0.0
+        )
+
         print("=" * 40)
 
         print("Backtest Summary")
@@ -82,10 +96,27 @@ class Backtester:
         )
 
         print(
+            f"Max Drawdown: {max_drawdown:.2f}%"
+        )
+
+        print(
+            f"Hit Rate: {hit_rate:.2f}%"
+        )
+
+        print(
             f"Trades: {int(trades)}"
         )
 
         print("=" * 40)
+
+        return {
+            "final_portfolio": df["portfolio"].iloc[-1],
+            "profit": total_return,
+            "return_pct": total_percent,
+            "max_drawdown_pct": max_drawdown,
+            "hit_rate_pct": hit_rate,
+            "trades": int(trades),
+        }
 
 
 if __name__ == "__main__":

@@ -45,6 +45,15 @@ class Config:
     TAKE_PROFIT = 0.10
 
     # -------------------------
+    # Trading Engine
+    # -------------------------
+    # Shares bought per BUY signal (subject to MAX_POSITION).
+    TRADE_QTY = 5
+
+    # How often (seconds) the engine re-checks each ticker for a new signal.
+    ENGINE_INTERVAL_SECONDS = 60
+
+    # -------------------------
     # Logging
     # -------------------------
     LOG_FOLDER = "logs"

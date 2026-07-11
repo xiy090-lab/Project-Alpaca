@@ -14,12 +14,13 @@ class RiskManager:
         self.stop_loss = stop_loss
         self.take_profit = take_profit
 
-    def check_position_size(self, quantity):
+    def check_position_size(self, quantity, current_qty=0):
         """
-        Check if position size exceeds the limit.
+        Check if adding `quantity` to an existing `current_qty` position
+        would exceed the max position limit.
         """
 
-        if quantity > self.max_position:
+        if current_qty + quantity > self.max_position:
             return False
 
         return True
@@ -42,12 +43,12 @@ class RiskManager:
 
         return profit >= self.take_profit
 
-    def allow_trade(self, quantity):
+    def allow_trade(self, quantity, current_qty=0):
         """
         Determine whether a trade is allowed.
         """
 
-        return self.check_position_size(quantity)
+        return self.check_position_size(quantity, current_qty)
 
 
 if __name__ == "__main__":

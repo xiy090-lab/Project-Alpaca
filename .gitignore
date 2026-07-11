@@ -13,3 +13,7 @@ logs/
 
 # OS
 .DS_Store
+
+# Editor / tooling
+.claude/
+.pytest_cache/

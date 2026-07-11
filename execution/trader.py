@@ -91,6 +91,17 @@ class Trader:
         """Return current open positions."""
         return self.client.get_all_positions()
 
+    def get_position_qty(self, symbol):
+        """
+        Return (qty, avg_entry_price) for an open position, or (0.0, 0.0)
+        if there is no open position for `symbol`.
+        """
+        try:
+            position = self.client.get_open_position(symbol)
+            return float(position.qty), float(position.avg_entry_price)
+        except Exception:
+            return 0.0, 0.0
+
     def get_account(self):
         """Return account info (equity, buying power, etc.)."""
         return self.client.get_account()
