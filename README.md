@@ -13,38 +13,32 @@ paper API, with a UI that shows what the system is doing (and why) in real time.
 ## Architecture
 
 ```
-                     +-------------------+
-   Alpaca REST/WS -->|   data/           |--> logs/ticks.csv
-                     | market_data.py     |
-                     | live_stream.py     |--> LiveStore (in-memory)
-                     | live_store.py      |
-                     +--------+----------+
-                              |
-                              v
-                     +-------------------+
-                     |   strategy/        |
-                     | moving_average.py  |  BUY / SELL / HOLD signal
-                     +--------+----------+
-                              |
-                              v
-                     +-------------------+        +------------------+
-                     |   execution/       |<------>|   risk/           |
-                     |   engine.py        |        | risk_manager.py   |
-                     | (background loop,  |        | position size,    |
-                     |  signal -> order)  |        | stop-loss/TP      |
-                     +--------+----------+        +------------------+
-                              |
-                              v
-                     +-------------------+
-                     |   execution/       |--> Alpaca paper account
-                     |   trader.py        |
-                     +--------+----------+
-                              |
-                              v
-                     +-------------------+
-                     |   ui/app.py        |  Flask dashboard (Start/Stop,
-                     | (Flask + templates)|  positions, signals, orders,
-                     +-------------------+  P&L, drawdown, hit rate)
+   Alpaca REST/WS
+        │
+        ▼
+   data/                      →  logs/ticks.csv
+   market_data.py                LiveStore (in-memory)
+   live_stream.py
+   live_store.py
+        │
+        ▼
+   strategy/                     BUY / SELL / HOLD signal
+   moving_average.py
+        │
+        ▼
+   execution/                 ⇄  risk/
+   engine.py                     risk_manager.py
+   (background loop,             position size,
+    signal → order)              stop-loss / take-profit
+        │
+        ▼
+   execution/                 →  Alpaca paper account
+   trader.py
+        │
+        ▼
+   ui/                           Flask dashboard: Start/Stop,
+   app.py (+ templates)          positions, signals, orders,
+                                 P&L, drawdown, hit rate
 ```
 
 - **Data pipeline** (`data/`): historical bars via REST for signal generation, plus a
@@ -106,9 +100,6 @@ main.py     starts the live stream, trading engine, and dashboard
    APCA_API_KEY_ID=your_paper_key
    APCA_API_SECRET_KEY=your_paper_secret
    ```
-   Get keys from the Alpaca dashboard → Paper Trading → API Keys.
-   `.env` is git-ignored — never commit real keys. Without keys, the dashboard still
-   runs, but the live stream, account panel, and trading engine stay disconnected.
 
 ## How to Run
 
@@ -209,6 +200,7 @@ Profit: $38,728.21
 Return: 38.73%
 Max Drawdown: -27.85%
 Hit Rate: 51.75%
+Sharpe Ratio: 0.45
 Trades: 35
 ========================================
 ```

@@ -85,6 +85,16 @@ class Backtester:
             else 0.0
         )
 
+        # Annualized Sharpe ratio (risk-free rate assumed 0), on daily
+        # strategy returns scaled by sqrt(252) trading days.
+        daily = df["strategy_return"]
+        std = daily.std()
+        sharpe = (
+            (daily.mean() / std) * (252 ** 0.5)
+            if std > 0
+            else 0.0
+        )
+
         print("=" * 40)
 
         print("Backtest Summary")
@@ -116,6 +126,10 @@ class Backtester:
         )
 
         print(
+            f"Sharpe Ratio: {sharpe:.2f}"
+        )
+
+        print(
             f"Trades: {int(trades)}"
         )
 
@@ -127,6 +141,7 @@ class Backtester:
             "return_pct": total_percent,
             "max_drawdown_pct": max_drawdown,
             "hit_rate_pct": hit_rate,
+            "sharpe": sharpe,
             "trades": int(trades),
         }
 
