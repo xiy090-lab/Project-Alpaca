@@ -122,7 +122,7 @@ routing signals to paper orders (it polls every `ENGINE_INTERVAL_SECONDS`, defau
 
 **Backtest:**
 ```bash
-python backtest/backtest.py
+python -m backtest.backtest
 ```
 
 **Tests:**
@@ -174,6 +174,12 @@ All trading runs in Alpaca **paper mode** only.
 
 ## Example Usage
 
+### Dashboard
+
+Running `python main.py` and opening http://127.0.0.1:5001 shows the live dashboard:
+
+![Alpaca Trading Dashboard](docs/images/dashboard.png)
+
 1. `python main.py`, open the dashboard, select a ticker tab to see its live quote
    and MA chart.
 2. Click **Start Strategy** — the engine begins polling; BUY/SELL signals and any
@@ -182,6 +188,30 @@ All trading runs in Alpaca **paper mode** only.
    **Engine Performance** tracks cumulative P&L, drawdown, and hit rate as trades
    close.
 4. Click **Stop Strategy** to pause new orders at any time.
+
+> The **Live Quotes (WebSocket)** panel only ticks during market hours (IEX feed);
+> outside market hours it shows "Waiting for first quote…" while every other panel
+> stays populated from Alpaca's REST API.
+
+### Backtest
+
+Running the backtester over historical AAPL data:
+
+```
+$ python -m backtest.backtest
+========================================
+Backtest Summary
+========================================
+Symbol: AAPL
+Initial Capital: $100,000.00
+Final Portfolio: $138,728.21
+Profit: $38,728.21
+Return: 38.73%
+Max Drawdown: -27.85%
+Hit Rate: 51.75%
+Trades: 35
+========================================
+```
 
 ## Limitations / Possible Improvements
 
