@@ -163,6 +163,31 @@ All trading runs in Alpaca **paper mode** only.
   panels read this same data live (cumulative P&L, max drawdown, trade count, hit
   rate).
 
+## Design Choices & Trade-offs
+
+A few deliberate decisions we made, and what we gave up for them:
+
+- **Signals on daily bars, not the live tick stream.** We compute the moving-average
+  crossover from daily REST bars rather than the WebSocket quotes. This keeps the
+  strategy simple and stable (a signal changes at most once a day) at the cost of
+  intraday responsiveness. The live stream is used for monitoring, stop-loss/take-profit
+  checks, and fill-price estimates rather than signal generation.
+- **Long-only, single strategy.** The engine enters on BUY and exits on SELL but never
+  shorts. This matches the backtester exactly, so backtest metrics correspond to live
+  behavior — at the cost of not profiting from downtrends.
+- **Polling engine over event-driven.** The engine polls every `ENGINE_INTERVAL_SECONDS`
+  (default 60s) instead of reacting to every tick. Simpler and easier to reason about,
+  but it reacts on a fixed cadence rather than instantly.
+- **Background thread for streaming.** Tracking prices synchronously would block anything
+  else from running on the main thread (the WebSocket `run()` call runs forever), so we
+  must run it in a new thread. It writes into a thread-safe in-memory store the Flask UI
+  reads, which keeps the web server responsive without a heavier message queue or process.
+- **Flask over Streamlit/Dash.** We chose Flask for full control over the dashboard's API
+  routes and a custom front end, trading some upfront convenience for flexibility.
+- **Fixed share size with a position cap.** Each BUY buys a fixed `TRADE_QTY`, bounded by
+  `MAX_POSITION`. Simple and predictable, but it doesn't size positions by volatility, so
+  risk per trade varies across tickers.
+
 ## Example Usage
 
 ### Dashboard
